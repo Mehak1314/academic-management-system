@@ -109,7 +109,6 @@ Student-manage/
 ├── run.bat
 ├── pom.xml
 ├── README.md
-├── schema.sql
 │
 ├── data/
 │   └── student_db.mv.db
