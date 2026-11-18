@@ -18,6 +18,7 @@ This project is developed as an independent academic prototype inspired by unive
 - Secure student authentication.
 - Personalized student dashboard.
 - View personal and academic information.
+- Semester fee assessment and online fee payment with instant clearance status.
 - Access student profile details.
 - View available academic records.
 - Student self-registration.
@@ -25,6 +26,7 @@ This project is developed as an independent academic prototype inspired by unive
 ### Administration Module
 - Dedicated administrator login.
 - View registered students.
+- One-click student fee payment clearance and status tracking on dashboard and directory.
 - Add new student records.
 - Update existing student information.
 - Delete student records.

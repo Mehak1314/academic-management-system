@@ -230,12 +230,27 @@ public class StandaloneAppRunner {
             // -------------------------------------------------------------
             // STUDENT PORTAL ROUTES (Gatekeeper: loggedStudent required)
             // -------------------------------------------------------------
-            if (path.equals("/student-dashboard") || path.equals("/student-profile") || path.equals("/academic-records")) {
+            if (path.equals("/student-dashboard") || path.equals("/student-profile") || path.equals("/academic-records") || path.equals("/pay-fee")) {
                 Student s = (Student) session.get("loggedStudent");
                 if (s == null) {
                     sendRedirect(out, "/login?role=student&error=unauthorized", isNewSession ? sessionId : null);
                     return;
                 }
+
+                // Handle Online Fee Payment by Student
+                if (path.equals("/pay-fee")) {
+                    try {
+                        studentDAO.updateFeeStatus(s.getId(), "Paid");
+                        s.setFeeStatus("Paid");
+                        session.put("loggedStudent", s);
+                        session.put("studentFlashSuccess", "Fee payment of ₹1,60,000 successfully processed! Transaction ID: #TIET-PAY-" + (System.currentTimeMillis() % 1000000) + ". Your semester fee status is now Fully Paid.");
+                    } catch (Exception e) {
+                        session.put("studentFlashError", "Payment processing error: " + e.getMessage());
+                    }
+                    sendRedirect(out, "/student-dashboard", isNewSession ? sessionId : null);
+                    return;
+                }
+
                 // Refresh data from database
                 try {
                     Student fresh = studentDAO.selectStudent(s.getId());
@@ -246,7 +261,9 @@ public class StandaloneAppRunner {
                 } catch (Exception ignored) {}
 
                 if (path.equals("/student-dashboard")) {
-                    sendHtml(out, 200, renderStudentDashboardHtml(s), isNewSession ? sessionId : null);
+                    String flashSuccess = (String) session.remove("studentFlashSuccess");
+                    String flashError = (String) session.remove("studentFlashError");
+                    sendHtml(out, 200, renderStudentDashboardHtml(s, flashSuccess, flashError), isNewSession ? sessionId : null);
                     return;
                 } else if (path.equals("/student-profile")) {
                     sendHtml(out, 200, renderStudentProfileHtml(s), isNewSession ? sessionId : null);
@@ -274,7 +291,8 @@ public class StandaloneAppRunner {
                     if (recent.size() > 5) {
                         recent = recent.subList(0, 5);
                     }
-                    sendHtml(out, 200, renderAdminDashboardHtml(adminUser, count, recent), isNewSession ? sessionId : null);
+                    String flash = (String) session.remove("flashSuccess");
+                    sendHtml(out, 200, renderAdminDashboardHtml(adminUser, count, recent, flash), isNewSession ? sessionId : null);
                 } catch (Exception e) {
                     sendHtml(out, 500, "Dashboard Error: " + e.getMessage(), null);
                 }
@@ -343,6 +361,20 @@ public class StandaloneAppRunner {
                             studentDAO.deleteStudent(id);
                             session.put("flashSuccess", "Student record successfully deleted from the directory.");
                             sendRedirect(out, "/students?action=list", isNewSession ? sessionId : null);
+                        } else if ("payFee".equals(action)) {
+                            int id = Integer.parseInt(qMap.get("id"));
+                            Student s = studentDAO.selectStudent(id);
+                            if (s != null) {
+                                studentDAO.updateFeeStatus(id, "Paid");
+                                session.put("flashSuccess", "Fee payment of ₹1,60,000 recorded as 'Paid' for " + s.getName() + " (" + s.getRollNumber() + ").");
+                            }
+                            String from = qMap.getOrDefault("from", "dashboard");
+                            if ("list".equalsIgnoreCase(from)) {
+                                sendRedirect(out, "/students?action=list", isNewSession ? sessionId : null);
+                            } else {
+                                sendRedirect(out, "/dashboard", isNewSession ? sessionId : null);
+                            }
+                            return;
                         } else if ("search".equals(action)) {
                             String kw = qMap.getOrDefault("keyword", "");
                             List<Student> list = studentDAO.searchStudents(kw);
@@ -511,8 +543,16 @@ public class StandaloneAppRunner {
     /**
      * Student Dashboard (Primary Student Landing View)
      */
-    private static String renderStudentDashboardHtml(Student s) {
+    private static String renderStudentDashboardHtml(Student s, String flashSuccess, String flashError) {
         StringBuilder sb = new StringBuilder();
+
+        // Flash Notifications
+        if (flashSuccess != null) {
+            sb.append("<div class='alert alert-success'><span>&#10004;</span> ").append(esc(flashSuccess)).append("</div>");
+        }
+        if (flashError != null) {
+            sb.append("<div class='alert alert-error'><span>&#9888;</span> ").append(esc(flashError)).append("</div>");
+        }
 
         // 1. Welcome Banner
         sb.append("<div class='academic-banner'>");
@@ -569,7 +609,52 @@ public class StandaloneAppRunner {
 
         sb.append("</div>"); // stats-grid
 
-        // 3. Quick Navigation Grid
+        // 3. Semester Fee Assessment & Online Payment Table (with "Fees Pay" Column)
+        boolean isPaid = "Paid".equalsIgnoreCase(s.getFeeStatus());
+        sb.append("<div class='card'>");
+        sb.append("<div class='card-header'>");
+        sb.append("<h3>&#128179; Semester Fee Assessment &amp; Payment Status</h3>");
+        sb.append("<span class='badge-tag ").append(feeClass).append("'>Status: ").append(esc(s.getFeeStatus())).append("</span>");
+        sb.append("</div>");
+        sb.append("<div class='card-body' style='padding: 0;'>");
+        sb.append("<div class='table-responsive'><table class='data-table'>");
+        sb.append("<thead><tr><th>Fee Component</th><th>Term</th><th>Due Date</th><th>Fee Amount</th><th>Status</th><th style='text-align: center;'>Fees Pay</th></tr></thead>");
+        sb.append("<tbody>");
+
+        // Component 1
+        sb.append("<tr>");
+        sb.append("<td><strong>Academic Tuition &amp; Laboratory Fee</strong><div style='font-size: 11.5px; color: var(--text-secondary);'>Core instructional, laboratory and computing facility charges</div></td>");
+        sb.append("<td>").append(esc(s.getSemester())).append("</td>");
+        sb.append("<td>15-Dec-2024</td>");
+        sb.append("<td><strong>₹1,45,000</strong></td>");
+        sb.append("<td><span class='badge-tag ").append(feeClass).append("'>").append(esc(s.getFeeStatus())).append("</span></td>");
+        sb.append("<td style='text-align: center;'>");
+        if (isPaid) {
+            sb.append("<span class='badge-tag badge-paid'>&#10004; Fully Paid</span>");
+        } else {
+            sb.append("<a href='/pay-fee' class='btn btn-primary btn-sm' onclick=\"return confirm('Proceed to pay tuition fee of ₹1,45,000 online via TIET Payment Gateway?');\">&#128179; Pay Fees Online</a>");
+        }
+        sb.append("</td></tr>");
+
+        // Component 2
+        sb.append("<tr>");
+        sb.append("<td><strong>University Examination &amp; Library Development Fee</strong><div style='font-size: 11.5px; color: var(--text-secondary);'>Central library digital access and semester assessment levy</div></td>");
+        sb.append("<td>").append(esc(s.getSemester())).append("</td>");
+        sb.append("<td>15-Dec-2024</td>");
+        sb.append("<td><strong>₹15,000</strong></td>");
+        sb.append("<td><span class='badge-tag ").append(feeClass).append("'>").append(esc(s.getFeeStatus())).append("</span></td>");
+        sb.append("<td style='text-align: center;'>");
+        if (isPaid) {
+            sb.append("<span class='badge-tag badge-paid'>&#10004; Fully Paid</span>");
+        } else {
+            sb.append("<a href='/pay-fee' class='btn btn-primary btn-sm' onclick=\"return confirm('Proceed to complete examination fee payment of ₹15,000?');\">&#128179; Pay Fees Online</a>");
+        }
+        sb.append("</td></tr>");
+
+        sb.append("</tbody></table></div>");
+        sb.append("</div></div>");
+
+        // 4. Quick Navigation Grid
         sb.append("<div class='quick-nav-grid'>");
 
         sb.append("<a href='/student-profile' class='quick-nav-card'>");
@@ -757,8 +842,13 @@ public class StandaloneAppRunner {
     /**
      * Admin Dashboard View
      */
-    private static String renderAdminDashboardHtml(String admin, int totalStudents, List<Student> recent) {
+    private static String renderAdminDashboardHtml(String admin, int totalStudents, List<Student> recent, String flashSuccess) {
         StringBuilder sb = new StringBuilder();
+
+        // Flash Alert if present
+        if (flashSuccess != null) {
+            sb.append("<div class='alert alert-success'><span>&#10004;</span> ").append(esc(flashSuccess)).append("</div>");
+        }
 
         // 1. Metric Cards
         sb.append("<div class='stats-grid'>");
@@ -820,14 +910,15 @@ public class StandaloneAppRunner {
         sb.append("</div>");
         sb.append("<div class='card-body' style='padding: 0;'>");
         sb.append("<div class='table-responsive'><table class='data-table'>");
-        sb.append("<thead><tr><th>Roll Number</th><th>Student Name</th><th>Degree Programme</th><th>Department</th><th>Sem</th><th>CGPA</th><th>Fee Status</th></tr></thead>");
+        sb.append("<thead><tr><th>Roll Number</th><th>Student Name</th><th>Degree Programme</th><th>Department</th><th>Sem</th><th>CGPA</th><th>Fee Status</th><th style='text-align: center;'>Fees Pay</th></tr></thead>");
         sb.append("<tbody>");
 
         if (recent.isEmpty()) {
-            sb.append("<tr><td colspan='7' style='text-align: center; padding: 32px; color: var(--text-secondary);'>No student records currently found in database.</td></tr>");
+            sb.append("<tr><td colspan='8' style='text-align: center; padding: 32px; color: var(--text-secondary);'>No student records currently found in database.</td></tr>");
         } else {
             for (Student s : recent) {
                 String feeClass = "Paid".equalsIgnoreCase(s.getFeeStatus()) ? "badge-paid" : ("Partial".equalsIgnoreCase(s.getFeeStatus()) ? "badge-partial" : "badge-pending");
+                boolean isPaid = "Paid".equalsIgnoreCase(s.getFeeStatus());
                 sb.append("<tr>");
                 sb.append("<td><strong>").append(esc(s.getRollNumber())).append("</strong></td>");
                 sb.append("<td><strong>").append(esc(s.getName())).append("</strong><div style='font-size: 11.5px; color: var(--text-secondary);'>").append(esc(s.getEmail())).append("</div></td>");
@@ -836,6 +927,13 @@ public class StandaloneAppRunner {
                 sb.append("<td>").append(esc(s.getSemester())).append("</td>");
                 sb.append("<td><strong>").append(String.format(Locale.US, "%.2f", s.getCgpa())).append("</strong></td>");
                 sb.append("<td><span class='badge-tag ").append(feeClass).append("'>").append(esc(s.getFeeStatus())).append("</span></td>");
+                sb.append("<td style='text-align: center;'>");
+                if (isPaid) {
+                    sb.append("<span class='badge-tag badge-paid' style='font-size: 11.5px;'>&#10004; Settled</span>");
+                } else {
+                    sb.append("<a href='/students?action=payFee&id=").append(s.getId()).append("&from=dashboard' class='btn btn-primary btn-sm' style='padding: 3px 8px; font-size: 11px;' onclick=\"return confirm('Clear and record fee payment as Paid for ").append(esc(s.getName())).append(" (").append(esc(s.getRollNumber())).append(")?');\">&#128179; Pay Fees</a>");
+                }
+                sb.append("</td>");
                 sb.append("</tr>");
             }
         }
@@ -876,16 +974,17 @@ public class StandaloneAppRunner {
 
         sb.append("<div class='card-body' style='padding: 0;'>");
         sb.append("<div class='table-responsive'><table class='data-table'>");
-        sb.append("<thead><tr><th>Roll Number</th><th>Full Name</th><th>Programme</th><th>Department</th><th>Sem</th><th>CGPA</th><th>Fee Status</th><th style='text-align: center;'>Actions</th></tr></thead>");
+        sb.append("<thead><tr><th>Roll Number</th><th>Full Name</th><th>Programme</th><th>Department</th><th>Sem</th><th>CGPA</th><th>Fee Status</th><th style='text-align: center;'>Fees Pay</th><th style='text-align: center;'>Actions</th></tr></thead>");
         sb.append("<tbody>");
 
         if (students.isEmpty()) {
-            sb.append("<tr><td colspan='8' style='text-align:center; padding: 48px; color: var(--text-secondary);'>");
+            sb.append("<tr><td colspan='9' style='text-align:center; padding: 48px; color: var(--text-secondary);'>");
             sb.append("<div class='empty-state'><div class='empty-state-icon'>&#128269;</div><h4>No matching student records found</h4><p>Try searching with another keyword or <a href='/students?action=new' style='color: var(--primary-red); font-weight: 600;'>enroll a new student record</a>.</p></div>");
             sb.append("</td></tr>");
         } else {
             for (Student s : students) {
                 String feeClass = "Paid".equalsIgnoreCase(s.getFeeStatus()) ? "badge-paid" : ("Partial".equalsIgnoreCase(s.getFeeStatus()) ? "badge-partial" : "badge-pending");
+                boolean isPaid = "Paid".equalsIgnoreCase(s.getFeeStatus());
                 sb.append("<tr>");
                 sb.append("<td><strong>").append(esc(s.getRollNumber())).append("</strong></td>");
                 sb.append("<td><strong>").append(esc(s.getName())).append("</strong><div style='font-size: 12px; color: var(--text-secondary);'>").append(esc(s.getEmail())).append("</div></td>");
@@ -894,6 +993,13 @@ public class StandaloneAppRunner {
                 sb.append("<td>").append(esc(s.getSemester())).append("</td>");
                 sb.append("<td><strong>").append(String.format(Locale.US, "%.2f", s.getCgpa())).append("</strong></td>");
                 sb.append("<td><span class='badge-tag ").append(feeClass).append("'>").append(esc(s.getFeeStatus())).append("</span></td>");
+                sb.append("<td style='text-align: center;'>");
+                if (isPaid) {
+                    sb.append("<span class='badge-tag badge-paid' style='font-size: 11.5px;'>&#10004; Settled</span>");
+                } else {
+                    sb.append("<a href='/students?action=payFee&id=").append(s.getId()).append("&from=list' class='btn btn-primary btn-sm' style='padding: 3px 8px; font-size: 11px;' onclick=\"return confirm('Clear and record fee payment as Paid for ").append(esc(s.getName())).append(" (").append(esc(s.getRollNumber())).append(")?');\">&#128179; Pay Fees</a>");
+                }
+                sb.append("</td>");
                 sb.append("<td style='text-align:center;'>");
                 sb.append("<div style='display:inline-flex; gap:6px;'>");
                 sb.append("<a href='/students?action=edit&id=").append(s.getId()).append("' class='btn btn-secondary btn-sm'>&#9998; Edit</a>");

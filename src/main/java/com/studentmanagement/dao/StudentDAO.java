@@ -154,6 +154,22 @@ public class StudentDAO {
         }
     }
 
+    public boolean updateFeeStatus(int id, String feeStatus) throws SQLException {
+        String sql = "UPDATE students SET fee_status = ? WHERE id = ?";
+        Connection connection = null;
+        PreparedStatement preparedStatement = null;
+        try {
+            connection = DBUtil.getConnection();
+            preparedStatement = connection.prepareStatement(sql);
+            preparedStatement.setString(1, feeStatus != null ? feeStatus.trim() : "Paid");
+            preparedStatement.setInt(2, id);
+            return preparedStatement.executeUpdate() > 0;
+        } finally {
+            DBUtil.closeResource(preparedStatement);
+            DBUtil.closeResource(connection);
+        }
+    }
+
     public boolean deleteStudent(int id) throws SQLException {
         Connection connection = null;
         PreparedStatement preparedStatement = null;
