@@ -108,6 +108,9 @@ Student-manage/
 ├── run.ps1
 ├── run.bat
 ├── pom.xml
+├── Dockerfile
+├── render.yaml
+├── Procfile
 ├── README.md
 │
 ├── data/
@@ -199,6 +202,28 @@ http://localhost:8080/login
 **5. Stop the application**
 
 Press `Ctrl + C` in the terminal to stop the server.
+
+## 🌐 Free Cloud Deployment (1-Click on Render)
+
+The project includes ready-to-deploy configuration files (`Dockerfile`, `render.yaml`, `Procfile`) and supports dynamic cloud port assignment via `PORT`.
+
+### Deploying for Free on Render.com:
+1. Go to **[Render.com](https://render.com/)** and sign in with your GitHub account.
+2. Click **New +** → **Web Service**.
+3. Select your repository: `academic-management-system`.
+4. Render will automatically detect the **Docker** environment:
+   - **Environment:** `Docker`
+   - **Plan Type:** `Free`
+5. Click **Create Web Service**.
+6. Render will automatically build the container and deploy your portal with a free public live URL (e.g. `https://academic-management-system.onrender.com/login`)!
+
+---
+
+### Alternative: Deploy on Railway
+1. Go to **[Railway.app](https://railway.app/)** and log in with GitHub.
+2. Click **New Project** → **Deploy from GitHub repo**.
+3. Select `academic-management-system`.
+4. Railway will automatically build the `Dockerfile` and give you a public URL.
 
 ## Demo Credentials
 

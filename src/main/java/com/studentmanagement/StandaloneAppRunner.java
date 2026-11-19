@@ -22,11 +22,19 @@ import java.util.concurrent.*;
  */
 public class StandaloneAppRunner {
 
-    private static final int PORT = 8080;
+    private static final int DEFAULT_PORT = 8080;
     private static final Map<String, Map<String, Object>> SESSIONS = new ConcurrentHashMap<>();
     private static final ExecutorService THREAD_POOL = Executors.newCachedThreadPool();
 
     public static void main(String[] args) {
+        int port = DEFAULT_PORT;
+        String envPort = System.getenv("PORT");
+        if (envPort != null && !envPort.trim().isEmpty()) {
+            try {
+                port = Integer.parseInt(envPort.trim());
+            } catch (Exception ignored) {}
+        }
+
         System.out.println("==================================================================");
         System.out.println("   TIET Student Portal - Thapar Institute of Engg. & Technology   ");
         System.out.println("   Patiala, Punjab, India | Academic Session 2024-2025            ");
@@ -39,9 +47,9 @@ public class StandaloneAppRunner {
             System.err.println("[DB Error] " + e.getMessage());
         }
 
-        try (ServerSocket serverSocket = new ServerSocket(PORT)) {
-            System.out.println("[Server] Application is live on port " + PORT + "!");
-            System.out.println("👉 Access Portal at: http://localhost:8080/login");
+        try (ServerSocket serverSocket = new ServerSocket(port)) {
+            System.out.println("[Server] Application is live on port " + port + "!");
+            System.out.println("👉 Access Portal at: http://localhost:" + port + "/login");
             System.out.println("==================================================================");
 
             while (true) {
@@ -1292,12 +1300,27 @@ public class StandaloneAppRunner {
 
     private static void serveFile(OutputStream out, String path, String newSessionId) throws IOException {
         File file = new File("src/main/webapp" + path);
-        if (!file.exists() || file.isDirectory()) {
+        if (!file.exists()) {
+            file = new File("webapp" + path);
+        }
+        byte[] bytes = null;
+        if (file.exists() && !file.isDirectory()) {
+            bytes = Files.readAllBytes(file.toPath());
+        } else {
+            try (InputStream is = StandaloneAppRunner.class.getResourceAsStream("/webapp" + path)) {
+                if (is != null) bytes = is.readAllBytes();
+            }
+            if (bytes == null) {
+                try (InputStream is = StandaloneAppRunner.class.getResourceAsStream(path)) {
+                    if (is != null) bytes = is.readAllBytes();
+                }
+            }
+        }
+        if (bytes == null) {
             sendHtml(out, 404, "Static file not found", null);
             return;
         }
         String mime = path.endsWith(".css") ? "text/css" : (path.endsWith(".js") ? "application/javascript" : "text/plain");
-        byte[] bytes = Files.readAllBytes(file.toPath());
         PrintWriter pw = new PrintWriter(new OutputStreamWriter(out, StandardCharsets.UTF_8));
         pw.print("HTTP/1.1 200 OK\r\n");
         pw.print("Content-Type: " + mime + "; charset=UTF-8\r\n");
